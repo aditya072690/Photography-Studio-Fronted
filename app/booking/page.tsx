@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { services } from '@/data/services';
+import { api } from '@/lib/api';
 import { FiCalendar, FiClock, FiMail, FiPhone, FiUser } from 'react-icons/fi';
 
 export default function BookingPage() {
@@ -16,25 +17,45 @@ export default function BookingPage() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would send data to a backend
-    console.log('Booking submitted:', formData);
-    setSubmitted(true);
-    // Reset form after 3 seconds
-    setTimeout(() => {
-      setSubmitted(false);
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        serviceType: '',
-        date: '',
-        time: '',
-        message: '',
+    setError(null);
+    setLoading(true);
+
+    try {
+      await api.createBooking({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        service_type: formData.serviceType,
+        date: formData.date,
+        time: formData.time,
+        message: formData.message,
       });
-    }, 3000);
+
+      setSubmitted(true);
+      // Reset form after 3 seconds
+      setTimeout(() => {
+        setSubmitted(false);
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          serviceType: '',
+          date: '',
+          time: '',
+          message: '',
+        });
+      }, 3000);
+    } catch (err: any) {
+      console.error('Booking submission error:', err);
+      setError(err.message || 'Failed to submit booking. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -77,6 +98,11 @@ export default function BookingPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    {error}
+                  </div>
+                )}
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
                     <FiUser className="inline mr-2" />
@@ -198,9 +224,10 @@ export default function BookingPage() {
 
                 <button
                   type="submit"
-                  className="w-full bg-black text-white py-3 rounded-lg hover:bg-gold-600 transition-colors duration-200 font-semibold text-lg"
+                  disabled={loading}
+                  className="w-full bg-black text-white py-3 rounded-lg hover:bg-gold-600 transition-colors duration-200 font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit Booking Request
+                  {loading ? 'Submitting...' : 'Submit Booking Request'}
                 </button>
               </form>
             )}

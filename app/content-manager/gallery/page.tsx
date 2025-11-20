@@ -1,13 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { galleryImages } from '@/data/gallery';
-import { GalleryImage, GalleryCategory } from '@/types';
+import { api } from '@/lib/api';
+import { GalleryCategory } from '@/types';
 import { FiPlus, FiEdit, FiTrash2, FiX } from 'react-icons/fi';
+import { convertGoogleDriveUrl } from '@/lib/googleDrive';
+
+interface GalleryImage {
+  id: string;
+  image_url: string;
+  title: string;
+  category: string;
+  description?: string;
+}
 
 export default function GalleryManagerPage() {
-  const [images, setImages] = useState<GalleryImage[]>(galleryImages);
+  const [images, setImages] = useState<GalleryImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null);
@@ -20,53 +31,83 @@ export default function GalleryManagerPage() {
 
   const categories: GalleryCategory[] = ['Wedding', 'Events', 'Portraits', 'Studio Shoots', 'Products', 'Baby Shoots'];
 
-  const handleAdd = () => {
-    const newImage: GalleryImage = {
-      id: `img-${Date.now()}`,
-      image: formData.image,
-      title: formData.title,
-      category: formData.category,
-      alt: formData.alt || formData.title,
-    };
-    setImages([...images, newImage]);
-    setIsAddModalOpen(false);
-    setFormData({ image: '', title: '', category: 'Wedding', alt: '' });
+  const fetchGallery = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getGallery();
+      setImages(data);
+    } catch (err: any) {
+      console.error('Error fetching gallery:', err);
+      setError(err.message || 'Failed to load gallery');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGallery();
+  }, []);
+
+  const handleAdd = async () => {
+    try {
+      await api.createGalleryItem({
+        image_url: formData.image,
+        title: formData.title,
+        category: formData.category,
+        description: formData.alt || formData.title,
+      });
+      setIsAddModalOpen(false);
+      setFormData({ image: '', title: '', category: 'Wedding', alt: '' });
+      // Refresh the gallery list
+      await fetchGallery();
+    } catch (err: any) {
+      console.error('Error adding gallery item:', err);
+      alert('Failed to add gallery item: ' + err.message);
+    }
   };
 
   const handleEdit = (image: GalleryImage) => {
     setEditingImage(image);
     setFormData({
-      image: image.image,
+      image: image.image_url,
       title: image.title,
-      category: image.category,
-      alt: image.alt,
+      category: image.category as GalleryCategory,
+      alt: image.description || '',
     });
     setIsEditModalOpen(true);
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingImage) return;
-    setImages(
-      images.map((img) =>
-        img.id === editingImage.id
-          ? {
-              ...img,
-              image: formData.image,
-              title: formData.title,
-              category: formData.category,
-              alt: formData.alt || formData.title,
-            }
-          : img
-      )
-    );
-    setIsEditModalOpen(false);
-    setEditingImage(null);
-    setFormData({ image: '', title: '', category: 'Wedding', alt: '' });
+    try {
+      await api.updateGalleryItem(editingImage.id, {
+        image_url: formData.image,
+        title: formData.title,
+        category: formData.category,
+        description: formData.alt || formData.title,
+      });
+      setIsEditModalOpen(false);
+      setEditingImage(null);
+      setFormData({ image: '', title: '', category: 'Wedding', alt: '' });
+      // Refresh the gallery list
+      await fetchGallery();
+    } catch (err: any) {
+      console.error('Error updating gallery item:', err);
+      alert('Failed to update gallery item: ' + err.message);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this image?')) {
-      setImages(images.filter((img) => img.id !== id));
+  const handleDelete = async (id: string) => {
+    if (confirm('Are you sure you want to delete this image? This action cannot be undone.')) {
+      try {
+        await api.deleteGalleryItem(id);
+        // Refresh the gallery list
+        await fetchGallery();
+      } catch (err: any) {
+        console.error('Error deleting gallery item:', err);
+        alert('Failed to delete gallery item: ' + err.message);
+      }
     }
   };
 
@@ -90,14 +131,17 @@ export default function GalleryManagerPage() {
         </button>
       </div>
 
+      {loading && <p className="text-center py-8">Loading gallery...</p>}
+      {error && <p className="text-center py-8 text-red-600">Error: {error}</p>}
+      
       {/* Gallery Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {images.map((image) => (
           <div key={image.id} className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="relative h-48">
               <Image
-                src={image.image}
-                alt={image.alt}
+                src={convertGoogleDriveUrl(image.image_url)}
+                alt={image.description || image.title}
                 fill
                 className="object-cover"
               />

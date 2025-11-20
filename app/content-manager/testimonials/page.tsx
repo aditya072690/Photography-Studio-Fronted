@@ -1,14 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { testimonials } from '@/data/testimonials';
-import { Testimonial } from '@/types';
+import { api } from '@/lib/api';
 import { FiPlus, FiEdit, FiTrash2, FiX, FiStar } from 'react-icons/fi';
 import { services } from '@/data/services';
 
+interface Testimonial {
+  id: string;
+  name: string;
+  email?: string;
+  rating: number;
+  comment: string;
+  image_url?: string;
+  created_at?: string;
+}
+
 export default function TestimonialsManagerPage() {
-  const [testimonialList, setTestimonialList] = useState<Testimonial[]>(testimonials);
+  const [testimonialList, setTestimonialList] = useState<Testimonial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
@@ -22,78 +33,104 @@ export default function TestimonialsManagerPage() {
     featured: false,
   });
 
-  const handleAdd = () => {
-    const newTestimonial: Testimonial = {
-      id: `test-${Date.now()}`,
-      clientName: formData.clientName,
-      clientImage: formData.clientImage || undefined,
-      service: formData.service,
-      rating: formData.rating,
-      review: formData.review,
-      date: formData.date,
-      featured: formData.featured,
-    };
-    setTestimonialList([...testimonialList, newTestimonial]);
-    setIsAddModalOpen(false);
-    setFormData({
-      clientName: '',
-      clientImage: '',
-      service: '',
-      rating: 5,
-      review: '',
-      date: new Date().toISOString().split('T')[0],
-      featured: false,
-    });
+  const fetchTestimonials = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getTestimonials();
+      setTestimonialList(data);
+    } catch (err: any) {
+      console.error('Error fetching testimonials:', err);
+      setError(err.message || 'Failed to load testimonials');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTestimonials();
+  }, []);
+
+  const handleAdd = async () => {
+    try {
+      await api.createTestimonial({
+        name: formData.clientName,
+        email: undefined,
+        rating: formData.rating,
+        comment: formData.review,
+        image_url: formData.clientImage || undefined,
+      });
+      setIsAddModalOpen(false);
+      setFormData({
+        clientName: '',
+        clientImage: '',
+        service: '',
+        rating: 5,
+        review: '',
+        date: new Date().toISOString().split('T')[0],
+        featured: false,
+      });
+      // Refresh the testimonials list
+      await fetchTestimonials();
+    } catch (err: any) {
+      console.error('Error adding testimonial:', err);
+      alert('Failed to add testimonial: ' + err.message);
+    }
   };
 
   const handleEdit = (testimonial: Testimonial) => {
     setEditingTestimonial(testimonial);
     setFormData({
-      clientName: testimonial.clientName,
-      clientImage: testimonial.clientImage || '',
-      service: testimonial.service,
+      clientName: testimonial.name,
+      clientImage: testimonial.image_url || '',
+      service: '',
       rating: testimonial.rating,
-      review: testimonial.review,
-      date: testimonial.date,
-      featured: testimonial.featured || false,
+      review: testimonial.comment,
+      date: testimonial.created_at ? new Date(testimonial.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      featured: false,
     });
     setIsEditModalOpen(true);
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingTestimonial) return;
-    setTestimonialList(
-      testimonialList.map((test) =>
-        test.id === editingTestimonial.id
-          ? {
-              ...test,
-              clientName: formData.clientName,
-              clientImage: formData.clientImage || undefined,
-              service: formData.service,
-              rating: formData.rating,
-              review: formData.review,
-              date: formData.date,
-              featured: formData.featured,
-            }
-          : test
-      )
-    );
-    setIsEditModalOpen(false);
-    setEditingTestimonial(null);
-    setFormData({
-      clientName: '',
-      clientImage: '',
-      service: '',
-      rating: 5,
-      review: '',
-      date: new Date().toISOString().split('T')[0],
-      featured: false,
-    });
+    try {
+      await api.updateTestimonial(editingTestimonial.id, {
+        name: formData.clientName,
+        email: undefined,
+        rating: formData.rating,
+        comment: formData.review,
+        image_url: formData.clientImage || undefined,
+      });
+      setIsEditModalOpen(false);
+      setEditingTestimonial(null);
+      setFormData({
+        clientName: '',
+        clientImage: '',
+        service: '',
+        rating: 5,
+        review: '',
+        date: new Date().toISOString().split('T')[0],
+        featured: false,
+      });
+      // Refresh the testimonials list
+      await fetchTestimonials();
+    } catch (err: any) {
+      console.error('Error updating testimonial:', err);
+      alert('Failed to update testimonial: ' + err.message);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this testimonial?')) {
-      setTestimonialList(testimonialList.filter((test) => test.id !== id));
+  const handleDelete = async (id: string) => {
+    if (confirm('Are you sure you want to delete this testimonial? This action cannot be undone.')) {
+      try {
+        await api.deleteTestimonial(id);
+        // Refresh the testimonials list
+        await fetchTestimonials();
+      } catch (err: any) {
+        console.error('Error deleting testimonial:', err);
+        alert('Failed to delete testimonial: ' + err.message);
+      }
     }
   };
 
@@ -260,6 +297,9 @@ export default function TestimonialsManagerPage() {
         </button>
       </div>
 
+      {loading && <p className="text-center py-8">Loading testimonials...</p>}
+      {error && <p className="text-center py-8 text-red-600">Error: {error}</p>}
+      
       {/* Testimonials List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {testimonialList.map((testimonial) => (
@@ -269,11 +309,11 @@ export default function TestimonialsManagerPage() {
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-4">
-                {testimonial.clientImage ? (
+                {testimonial.image_url ? (
                   <div className="relative w-16 h-16 rounded-full overflow-hidden">
                     <Image
-                      src={testimonial.clientImage}
-                      alt={testimonial.clientName}
+                      src={testimonial.image_url}
+                      alt={testimonial.name}
                       fill
                       className="object-cover"
                     />
@@ -281,18 +321,12 @@ export default function TestimonialsManagerPage() {
                 ) : (
                   <div className="w-16 h-16 rounded-full bg-gold-200 flex items-center justify-center">
                     <span className="text-gold-800 font-bold text-xl">
-                      {testimonial.clientName.charAt(0)}
+                      {testimonial.name.charAt(0)}
                     </span>
                   </div>
                 )}
                 <div>
-                  <h3 className="font-semibold">{testimonial.clientName}</h3>
-                  <p className="text-sm text-gray-600">{testimonial.service}</p>
-                  {testimonial.featured && (
-                    <span className="inline-block mt-1 text-xs bg-gold-100 text-gold-800 px-2 py-1 rounded">
-                      Featured
-                    </span>
-                  )}
+                  <h3 className="font-semibold">{testimonial.name}</h3>
                 </div>
               </div>
               <div className="flex space-x-2">
@@ -319,8 +353,10 @@ export default function TestimonialsManagerPage() {
               ))}
             </div>
 
-            <p className="text-gray-700 italic mb-2">"{testimonial.review}"</p>
-            <p className="text-sm text-gray-500">{testimonial.date}</p>
+            <p className="text-gray-700 italic mb-2">"{testimonial.comment}"</p>
+            <p className="text-sm text-gray-500">
+              {testimonial.created_at ? new Date(testimonial.created_at).toLocaleDateString() : ''}
+            </p>
           </div>
         ))}
       </div>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { contactInfo } from '@/data/contact';
+import { api } from '@/lib/api';
 import { FiMail, FiPhone, FiMapPin, FiInstagram, FiFacebook, FiTwitter, FiLinkedin, FiSend } from 'react-icons/fi';
 
 export default function ContactPage() {
@@ -14,21 +15,39 @@ export default function ContactPage() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Contact form submitted:', formData);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        subject: '',
-        message: '',
+    setError(null);
+    setLoading(true);
+
+    try {
+      await api.submitContact({
+        name: formData.name,
+        email: formData.email,
+        subject: formData.subject,
+        message: formData.message,
       });
-    }, 3000);
+
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          subject: '',
+          message: '',
+        });
+      }, 3000);
+    } catch (err: any) {
+      console.error('Contact form submission error:', err);
+      setError(err.message || 'Failed to send message. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -165,6 +184,11 @@ export default function ContactPage() {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                      {error}
+                    </div>
+                  )}
                   <div>
                     <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
                       Name
@@ -241,10 +265,11 @@ export default function ContactPage() {
 
                   <button
                     type="submit"
-                    className="w-full bg-black text-white py-3 rounded-lg hover:bg-gold-600 transition-colors duration-200 font-semibold flex items-center justify-center space-x-2"
+                    disabled={loading}
+                    className="w-full bg-black text-white py-3 rounded-lg hover:bg-gold-600 transition-colors duration-200 font-semibold flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <span>Send Message</span>
-                    <FiSend />
+                    <span>{loading ? 'Sending...' : 'Send Message'}</span>
+                    {!loading && <FiSend />}
                   </button>
                 </form>
               )}
